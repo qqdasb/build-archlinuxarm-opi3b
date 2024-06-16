@@ -1,4 +1,4 @@
-name: Build
+ name: Build
 
 on:
   push:
@@ -19,9 +19,9 @@ jobs:
         sudo apt install arch-install-scripts build-essential openssl pkg-config libssl-dev libncurses5-dev pkg-config minizip libelf-dev flex bison  libc6-dev libidn11-dev rsync bc liblz4-tool gcc-aarch64-linux-gnu gcc u-boot-tools dpkg-dev dpkg git python3-pip qemu-user-static
         sudo pip install pyelftools
         wget https://raw.githubusercontent.com/qqdasb/my-files/master/linux-rk35xx-legacy.config
-        git clone https://github.com/armbian/linux-rockchip.git --depth 1
-        mv linux-rk35xx-legacy.config linux-rockchip/.config
-        git clone https://github.com/w568w/u-boot-orangepi-3b --recursive
+        git clone https://github.com/armbian/linux-rockchip.git --depth 1 kernel
+        mv linux-rk35xx-legacy.config kernel/.config
+        git clone https://github.com/w568w/u-boot-orangepi-3b --recursive u-boot
         wget http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz
         sudo dd if=/dev/zero of=archlinux.img bs=3G count=6
         sudo mkfs.ext4 archlinux.img
@@ -31,8 +31,14 @@ jobs:
         sudo cp /usr/bin/qemu-aarch64-static arch/usr/bin/
     - name: Build Kernel
       run: |
-        cd linux-rockchip
+        cd kernel
         make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc)
+        cd ..
+    - name: Build U-Boot
+      run: |
+        cd u-boot
+        sudo ./build-orangepi3b.sh
+        cp u-boot-rockchip.bin ..
         cd ..
     - name: Build Rootfs
       run: |
@@ -44,13 +50,17 @@ jobs:
         sudo arch-chroot arch git clone https://github.com/armbian/firmware.git --depth 1
         sudo arch-chroot arch mv firmware /usr/lib/
         sudo arch-chroot arch ldconfig
-        sudo make -C linux-rockchip/ ARCH=arm64 INSTALL_PATH=/home/runner/work/build-archlinuxarm-opi3b/build-archlinuxarm-opi3b/arch/boot/ install 
-        sudo make -C linux-rockchip/ ARCH=arm64 INSTALL_MOD_PATH=/home/runner/work/build-archlinuxarm-opi3b/build-archlinuxarm-opi3b/arch/usr/ modules_install
-        sudo make -C linux-rockchip/ ARCH=arm64 INSTALL_DTBS_PATH=/home/runner/work/build-archlinuxarm-opi3b/build-archlinuxarm-opi3b/arch/boot/dtbs/5.10.160/ dtbs_install
-        sudo make -C linux-rockchip/ ARCH=arm64 INSTALL_HDR_PATH=/home/runner/work/build-archlinuxarm-opi3b/build-archlinuxarm-opi3b/arch/usr/ headers_install
+        sudo make -C kernel/ ARCH=arm64 INSTALL_PATH=/home/runner/work/build-archlinuxarm-opi3b/build-archlinuxarm-opi3b/arch/boot/ install 
+        sudo make -C kernel/ ARCH=arm64 INSTALL_MOD_PATH=/home/runner/work/build-archlinuxarm-opi3b/build-archlinuxarm-opi3b/arch/usr/ modules_install
+        sudo make -C kernel/ ARCH=arm64 INSTALL_DTBS_PATH=/home/runner/work/build-archlinuxarm-opi3b/build-archlinuxarm-opi3b/arch/boot/dtbs/5.10.160/ dtbs_install
+        sudo make -C kernel/ ARCH=arm64 INSTALL_HDR_PATH=/home/runner/work/build-archlinuxarm-opi3b/build-archlinuxarm-opi3b/arch/usr/ headers_install
         sudo arch-chroot arch mkinitcpio --generate /boot/initrd.img-5.10.160 --kernel 5.10.160
     - name: Build Image
       run: |
+        sudo umount arch/
+        sudo losetup /dev/loop0 archlinux.img
+        sudo dd if=./u-boot-rockchip.bin of=/dev/loop0 seek=64
+        sudo losetup -d /dev/loop0
         sudo e2fsck -p -f archlinux.img
         sudo resize2fs -M archlinux.img
     - uses: actions/upload-artifact@v4
